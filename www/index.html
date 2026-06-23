@@ -1245,16 +1245,20 @@ input[type="range"]::-moz-range-thumb {
   </div>
 
   <!-- Scripts -->
-  <!-- 预加载 Capacitor TTS 插件（通过 ES 模块导入后暴露为全局变量） -->
-  <script type="module">
-    try {
-      const { TextToSpeech } = await import('@capacitor-community/text-to-speech');
-      window.TextToSpeechPlugin = TextToSpeech;
-      console.log('✅ TTS Plugin loaded via module');
-    } catch (e) {
-      console.error('❌ Failed to load TTS plugin:', e);
-      window.TextToSpeechPlugin = null;
-    }
+  <!-- 预加载 Capacitor TTS 插件（通过 Capacitor.Plugins 全局访问） -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // 等待 Capacitor 初始化完成
+      var checkCapacitor = setInterval(function() {
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.TextToSpeech) {
+          window.TextToSpeechPlugin = window.Capacitor.Plugins.TextToSpeech;
+          console.log('✅ TTS Plugin loaded via Capacitor.Plugins');
+          clearInterval(checkCapacitor);
+        }
+      }, 100);
+      // 5秒后停止检查
+      setTimeout(function() { clearInterval(checkCapacitor); }, 5000);
+    });
   </script>
   <script>
 // ============================================================
@@ -4517,14 +4521,32 @@ const App = (function() {
             if (typeof showToast === 'function') showToast('⚠️ TTS 插件未加载，请重新启动应用');
             return;
           }
-          await TextToSpeech.speak({
-            text: cleanText,
-            lang: 'ur-PK',
-            rate: (options.rate || settings.speechRate || 0.8),
-            pitch: (options.pitch || settings.speechPitch || 1.0),
-            volume: 1.0,
-            category: 'ambient'
-          });
+          try {
+            await TextToSpeech.speak({
+              text: cleanText,
+              lang: 'ur-PK',
+              rate: (options.rate || settings.speechRate || 0.8),
+              pitch: (options.pitch || settings.speechPitch || 1.0),
+              volume: 1.0,
+              category: 'ambient'
+            });
+          } catch (e) {
+            // ur-PK 可能缺少语言数据，fallback 到 en-US（至少能发出声音）
+            if (e.message && e.message.includes('Failed to read text')) {
+              console.warn('ur-PK TTS data missing, falling back to en-US');
+              if (typeof showToast === 'function') showToast('⚠️ 乌尔都语语音包未安装，尝试用英语朗读');
+              await TextToSpeech.speak({
+                text: cleanText,
+                lang: 'en-US',
+                rate: (options.rate || settings.speechRate || 0.8),
+                pitch: (options.pitch || settings.speechPitch || 1.0),
+                volume: 1.0,
+                category: 'ambient'
+              });
+            } else {
+              throw e;
+            }
+          }
         } catch (e) {
           console.error('Native TTS error:', e);
           if (typeof showToast === 'function') showToast('⚠️ 语音朗读失败: ' + e.message);
@@ -4649,7 +4671,7 @@ const App = (function() {
         setTimeout(() => { this.speak('السلام علیکم'); }, 100);
       }
     }
-  };  };
+  };
 
   // 初始化
   function init() {
