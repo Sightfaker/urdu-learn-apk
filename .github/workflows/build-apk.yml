@@ -22,22 +22,41 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Verify files
+      - name: Check repo files
         run: |
+          echo "=== ROOT FILES ==="
           ls -la
-          ls -la www/
+          echo "=== CAPACITOR CONFIG ==="
+          cat capacitor.config.json
+          echo "=== WWW FILES ==="
+          ls -la www/ || echo "www/ NOT FOUND"
+          echo "=== PACKAGE.JSON ==="
+          cat package.json
+
+      - name: Install dependencies
+        run: |
+          npm install --no-package-lock --no-audit --no-fund --verbose
+          echo "=== npm install exit code: $? ==="
+
+      - name: Verify Capacitor CLI
+        run: |
+          ls -la node_modules/.bin/cap
+          node_modules/.bin/cap --version
+          echo "=== CLI OK ==="
 
       - name: Copy web assets to Android
-        run: npx cap copy android
+        run: |
+          node_modules/.bin/cap copy android
+          echo "=== CAP COPY OK ==="
+          ls -la android/app/src/main/assets/public/ || echo "public dir check"
+
+      - name: Grant Gradle execute permission
+        run: chmod +x android/gradlew
 
       - name: Build APK
         run: |
           cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
