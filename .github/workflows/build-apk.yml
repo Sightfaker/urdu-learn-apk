@@ -8,8 +8,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
     steps:
       - uses: actions/checkout@v4
 
@@ -32,30 +30,28 @@ jobs:
           echo "=== ROOT ===" && ls -la
           echo "=== WWW ===" && ls -la www/ || echo "www missing"
           echo "=== CONFIG ===" && cat capacitor.config.json
-          echo "=== GRADLEW ===" && ls -la android/gradlew
-          echo "=== GRADLE WRAPPER ===" && ls -la android/gradle/wrapper/
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
-      - name: Verify Capacitor CLI installed
+      - name: Verify Capacitor CLI paths
         run: |
-          ls -la node_modules/.bin/cap
-          node_modules/.bin/cap --version
+          echo "=== Find cap binary ==="
+          find node_modules -name "cap" -type f 2>/dev/null | head -5
+          find node_modules/.bin -name "cap*" 2>/dev/null | head -5
+          echo "=== Direct test ==="
+          npx cap --version
 
-      - name: Sync Capacitor (copy + update plugins)
-        run: node_modules/.bin/cap sync android --no-build
-
-      - name: Verify copied assets
-        run: ls -la android/app/src/main/assets/public/ || echo "Assets dir check"
+      - name: Sync Capacitor
+        run: npx cap sync android
 
       - name: Grant Gradle permission
         run: chmod +x android/gradlew
 
-      - name: Build APK with Gradle
+      - name: Build APK
         run: |
           cd android
-          ./gradlew assembleDebug --stacktrace --info
+          ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
