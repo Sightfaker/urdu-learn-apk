@@ -1,0 +1,6 @@
+{
+  "appId": "com.sightfaker.urdulearn",
+  "appName": "乌尔都语大师",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
