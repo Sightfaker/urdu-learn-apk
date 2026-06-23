@@ -11,14 +11,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0 platform-tools'
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
@@ -27,6 +29,8 @@ jobs:
 
       - name: Pre-build checks
         run: |
+          echo "=== Java Version ==="
+          java -version
           echo "=== Capacitor Config ==="
           cat capacitor.config.json
           echo "=== WWW Files ==="
@@ -34,6 +38,10 @@ jobs:
           echo "=== Gradle Wrapper ==="
           ls -la android/gradlew
           ls -la android/gradle/wrapper/
+          echo "=== Android SDK ==="
+          echo $ANDROID_HOME
+          ls -la $ANDROID_HOME/platforms/ || true
+          ls -la $ANDROID_HOME/build-tools/ || true
 
       - name: Install npm dependencies
         run: npm install --no-audit --no-fund
@@ -44,7 +52,7 @@ jobs:
           cap --version
 
       - name: Sync Capacitor to Android
-        run: cap sync android
+        run: npx cap sync android
 
       - name: Grant Gradle execute permission
         run: chmod +x android/gradlew
@@ -52,7 +60,9 @@ jobs:
       - name: Build Debug APK
         run: |
           cd android
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug --stacktrace --no-daemon
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
       - name: Verify APK exists
         run: |
