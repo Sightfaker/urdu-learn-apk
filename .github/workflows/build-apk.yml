@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
     steps:
       - uses: actions/checkout@v4
 
@@ -17,46 +19,43 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Check repo files
+      - name: Verify files before build
         run: |
-          echo "=== ROOT FILES ==="
-          ls -la
-          echo "=== CAPACITOR CONFIG ==="
-          cat capacitor.config.json
-          echo "=== WWW FILES ==="
-          ls -la www/ || echo "www/ NOT FOUND"
-          echo "=== PACKAGE.JSON ==="
-          cat package.json
+          echo "=== ROOT ===" && ls -la
+          echo "=== WWW ===" && ls -la www/ || echo "www missing"
+          echo "=== CONFIG ===" && cat capacitor.config.json
+          echo "=== GRADLEW ===" && ls -la android/gradlew
+          echo "=== GRADLE WRAPPER ===" && ls -la android/gradle/wrapper/
 
       - name: Install dependencies
-        run: |
-          npm install --no-package-lock --no-audit --no-fund --verbose
-          echo "=== npm install exit code: $? ==="
+        run: npm ci --no-audit --no-fund
 
-      - name: Verify Capacitor CLI
+      - name: Verify Capacitor CLI installed
         run: |
           ls -la node_modules/.bin/cap
           node_modules/.bin/cap --version
-          echo "=== CLI OK ==="
 
-      - name: Copy web assets to Android
-        run: |
-          node_modules/.bin/cap copy android
-          echo "=== CAP COPY OK ==="
-          ls -la android/app/src/main/assets/public/ || echo "public dir check"
+      - name: Sync Capacitor (copy + update plugins)
+        run: node_modules/.bin/cap sync android --no-build
 
-      - name: Grant Gradle execute permission
+      - name: Verify copied assets
+        run: ls -la android/app/src/main/assets/public/ || echo "Assets dir check"
+
+      - name: Grant Gradle permission
         run: chmod +x android/gradlew
 
-      - name: Build APK
+      - name: Build APK with Gradle
         run: |
           cd android
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug --stacktrace --info
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
