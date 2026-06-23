@@ -1245,6 +1245,17 @@ input[type="range"]::-moz-range-thumb {
   </div>
 
   <!-- Scripts -->
+  <!-- 预加载 Capacitor TTS 插件（通过 ES 模块导入后暴露为全局变量） -->
+  <script type="module">
+    try {
+      const { TextToSpeech } = await import('@capacitor-community/text-to-speech');
+      window.TextToSpeechPlugin = TextToSpeech;
+      console.log('✅ TTS Plugin loaded via module');
+    } catch (e) {
+      console.error('❌ Failed to load TTS plugin:', e);
+      window.TextToSpeechPlugin = null;
+    }
+  </script>
   <script>
 // ============================================================
 // 乌尔都语学习课程数据 - 6个月精通计划
@@ -4500,7 +4511,12 @@ const App = (function() {
       // 使用Capacitor原生TTS
       if (this.useNativeTTS) {
         try {
-          const { TextToSpeech } = await import('@capacitor-community/text-to-speech');
+          const TextToSpeech = window.TextToSpeechPlugin;
+          if (!TextToSpeech) {
+            console.error('TextToSpeech plugin not available');
+            if (typeof showToast === 'function') showToast('⚠️ TTS 插件未加载，请重新启动应用');
+            return;
+          }
           await TextToSpeech.speak({
             text: cleanText,
             lang: 'ur-PK',
@@ -4562,9 +4578,10 @@ const App = (function() {
       // 停止原生TTS
       if (this.useNativeTTS) {
         try {
-          import('@capacitor-community/text-to-speech').then(({ TextToSpeech }) => {
+          const TextToSpeech = window.TextToSpeechPlugin;
+          if (TextToSpeech && TextToSpeech.stop) {
             TextToSpeech.stop();
-          });
+          }
         } catch (e) {}
       }
       if ('speechSynthesis' in window) {
@@ -5028,13 +5045,13 @@ const App = (function() {
             每个闪卡都带有 🔊 朗读按钮，翻转后自动播放乌尔都语发音。
           </p>
           <p style="font-size:0.8rem;margin-bottom:10px;color:var(--text-muted);">
-            ${window.speechSynthesis ? '✅ 浏览器支持语音朗读' : '❌ 浏览器不支持语音朗读'}
+            ${SpeechManager.useNativeTTS ? '✅ 使用原生语音引擎（APK模式）' : (window.speechSynthesis ? '✅ 浏览器支持语音朗读' : '❌ 浏览器不支持语音朗读')}
           </p>
           <p style="font-size:0.8rem;margin-bottom:10px;color:var(--accent);">
-            ${window.speechSynthesis && SpeechManager.voices.length === 0 ? '⚠️ 未检测到系统语音引擎，请安装 Google 文字转语音（TTS）后重试' : ''}
+            ${!SpeechManager.useNativeTTS && window.speechSynthesis && SpeechManager.voices.length === 0 ? '⚠️ 未检测到系统语音引擎，请安装 Google 文字转语音（TTS）后重试' : ''}
           </p>
           <p style="font-size:0.85rem;margin-bottom:10px;color:var(--text-muted);">
-            ${SpeechManager.isSpeechRecognitionReady ? '✅ 支持语音识别跟读练习' : '⚠️ 语音识别需要 Chrome 浏览器'}
+            ${SpeechManager.isSpeechRecognitionReady ? '✅ 支持语音识别跟读练习' : '⚠️ 语音识别不可用（APK中暂不支持）'}
           </p>
           <button class="btn btn-sm btn-secondary" onclick="App.testSpeech()" style="width:auto;">
             🔊 试听语音
@@ -5742,8 +5759,8 @@ const App = (function() {
             </button>
           </div>
           <div style="font-size:0.75rem;color:var(--text-muted);margin-top:8px;">
-            ${SpeechManager.isTTSReady ? '✅ 语音引擎就绪' : '⚠️ 语音引擎加载中...'}<br>
-            ${SpeechManager.isSpeechRecognitionReady ? '✅ 语音识别可用' : '⚠️ 语音识别不可用（请使用 Chrome 浏览器）'}
+            ${SpeechManager.useNativeTTS ? '✅ 原生语音引擎已启用' : (SpeechManager.isTTSReady ? '✅ 语音引擎就绪' : '⚠️ 语音引擎加载中...')}<br>
+            ${SpeechManager.isSpeechRecognitionReady ? '✅ 语音识别可用' : '⚠️ 语音识别不可用（APK中暂不支持）'}
           </div>
         </div>
       </div>
