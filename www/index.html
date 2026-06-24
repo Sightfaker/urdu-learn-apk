@@ -4512,53 +4512,62 @@ const App = (function() {
       const cleanText = text.replace(/\([^)]*\)/g, '').trim();
       if (!cleanText) return;
 
-      // 使用Capacitor原生TTS
+      // 使用Capacitor原生TTS（如果可用）
       if (this.useNativeTTS) {
+        let capacitorTTSWorked = false;
         try {
           const TextToSpeech = window.TextToSpeechPlugin;
-          if (!TextToSpeech) {
-            console.error('TextToSpeech plugin not available');
-            if (typeof showToast === 'function') showToast('⚠️ TTS 插件未加载，请重新启动应用');
-            return;
-          }
-          try {
-            await TextToSpeech.speak({
-              text: cleanText,
-              lang: 'ur-PK',
-              rate: (options.rate || settings.speechRate || 0.8),
-              pitch: (options.pitch || settings.speechPitch || 1.0),
-              volume: 1.0,
-              category: 'ambient'
-            });
-          } catch (e) {
-            // ur-PK 可能缺少语言数据，fallback 到 en-US（至少能发出声音）
-            if (e.message && e.message.includes('Failed to read text')) {
-              console.warn('ur-PK TTS data missing, falling back to en-US');
-              if (typeof showToast === 'function') showToast('⚠️ 乌尔都语语音包未安装，尝试用英语朗读');
+          if (TextToSpeech) {
+            try {
               await TextToSpeech.speak({
                 text: cleanText,
-                lang: 'en-US',
+                lang: 'ur-PK',
                 rate: (options.rate || settings.speechRate || 0.8),
                 pitch: (options.pitch || settings.speechPitch || 1.0),
                 volume: 1.0,
                 category: 'ambient'
               });
-            } else {
-              throw e;
+              capacitorTTSWorked = true;
+            } catch (e) {
+              // Capacitor TTS 失败，继续尝试 eSpeak-ng
+              console.log('Capacitor TTS failed, will try eSpeak-ng...');
             }
           }
         } catch (e) {
-          console.error('Native TTS error:', e);
-          if (typeof showToast === 'function') showToast('⚠️ 语音朗读失败: ' + e.message);
+          console.log('Capacitor TTS error, will try eSpeak-ng...');
+        }
+        
+        // Capacitor TTS 失败或未加载，使用 eSpeak-ng 离线 TTS（内置乌尔都语数据）
+        if (!capacitorTTSWorked) {
+          if (window.EspeakTTS) {
+            try {
+              await window.EspeakTTS.speak(cleanText, 'ur');
+              return;
+            } catch (e) {
+              console.error('eSpeak-ng TTS failed:', e);
+              if (typeof showToast === 'function') showToast('⚠️ 离线语音朗读失败: ' + e.message);
+            }
+          } else {
+            if (typeof showToast === 'function') showToast('⚠️ TTS 引擎未加载');
+          }
         }
         return;
       }
 
-      // 浏览器TTS回退
+      // 浏览器TTS回退（PWA 模式）
       if (!this.isTTSReady) {
         this.forceInit();
       }
       if (!('speechSynthesis' in window)) {
+        // 浏览器不支持 Web Speech API，尝试 eSpeak-ng
+        if (window.EspeakTTS) {
+          try {
+            await window.EspeakTTS.speak(cleanText, 'ur');
+            return;
+          } catch (e) {
+            console.error('eSpeak-ng TTS failed:', e);
+          }
+        }
         if (typeof showToast === 'function') showToast('⚠️ 您的浏览器不支持语音朗读');
         return;
       }
@@ -5947,6 +5956,43 @@ document.addEventListener('DOMContentLoaded', App.init);
         if (loading) loading.classList.add('hidden');
       }, 800);
     });
+  </script>
+  <!-- eSpeak-ng 离线 TTS（内置乌尔都语语音数据，无需 Google TTS 或网络） -->
+  <script type="module">
+    const EspeakTTS = {
+      audioContext: null,
+      
+      async speak(text, lang) {
+        if (!this.audioContext) {
+          this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        
+        const { default: ESpeakNG } = await import('./espeak-ng/espeak-ng.js');
+        const outputPath = '/tmp/espeak_output.wav';
+        const espeak = await ESpeakNG({
+          arguments: ['-v', lang, '-w', outputPath, text]
+        });
+        const wavData = espeak.FS.readFile(outputPath, { encoding: 'binary' });
+        const arrayBuffer = wavData.buffer.slice(wavData.byteOffset, wavData.byteOffset + wavData.byteLength);
+        
+        const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+        const source = this.audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(this.audioContext.destination);
+        source.start(0);
+        
+        return new Promise(resolve => { source.onended = resolve; });
+      },
+      
+      stop() {
+        if (this.audioContext) {
+          this.audioContext.suspend();
+        }
+      }
+    };
+    
+    window.EspeakTTS = EspeakTTS;
+    console.log('✅ eSpeak-ng offline TTS module loaded');
   </script>
 </body>
 </html>
