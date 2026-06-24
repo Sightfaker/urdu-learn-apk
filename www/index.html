@@ -4395,7 +4395,7 @@ const App = (function() {
 
   // ============================================================
   // 语音管理器 (SpeechManager)
-  // 浏览器内置 TTS + 语音识别
+  // 浏览器内置 TTS + 语音识别 + 预录音频
   // ============================================================
   const SpeechManager = {
     voices: [],
@@ -4413,8 +4413,66 @@ const App = (function() {
     initTimer: null,
     // 标记是否使用Capacitor原生TTS（APK模式下）
     useNativeTTS: false,
+    // 预录音频映射表和缓存
+    audioMap: {},
+    audioCache: {},
+    audioBasePath: './audio/',
+
+    async loadAudioMap() {
+      try {
+        const res = await fetch(this.audioBasePath + 'audio_map.json');
+        if (res.ok) {
+          this.audioMap = await res.json();
+          console.log('Audio map loaded:', Object.keys(this.audioMap).length, 'entries');
+        }
+      } catch (e) {
+        console.log('Audio map not available:', e.message);
+      }
+    },
+
+    async playPreRecorded(text) {
+      if (!this.audioMap || !this.audioMap[text]) return false;
+      const filename = this.audioMap[text];
+      const url = this.audioBasePath + filename;
+      
+      // 使用缓存的 Audio 对象
+      let audio = this.audioCache[url];
+      if (!audio) {
+        audio = new Audio(url);
+        this.audioCache[url] = audio;
+      }
+      
+      return new Promise((resolve) => {
+        const onEnded = () => {
+          this.isSpeaking = false;
+          cleanup();
+          resolve(true);
+        };
+        const onError = () => {
+          this.isSpeaking = false;
+          cleanup();
+          resolve(false);
+        };
+        const cleanup = () => {
+          audio.removeEventListener('ended', onEnded);
+          audio.removeEventListener('error', onError);
+        };
+        audio.addEventListener('ended', onEnded);
+        audio.addEventListener('error', onError);
+        
+        this.isSpeaking = true;
+        audio.currentTime = 0;
+        audio.play().catch((e) => {
+          console.log('Pre-recorded audio play failed:', e);
+          onError();
+        });
+      });
+    },
 
     init() {
+      // 加载预录音频映射表
+      this.loadAudioMap();
+      
       // 检测是否在Capacitor原生环境中
       if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
         this.useNativeTTS = true;
@@ -4505,14 +4563,24 @@ const App = (function() {
       this.isTTSReady = true;
     },
 
-    // 异步speak - 支持Capacitor原生TTS
+    // 异步speak - 支持预录音频优先，fallback到eSpeak-ng
     async speak(text, options = {}) {
       if (!settings.speechEnabled) return;
       if (!text || text.trim() === '') return;
       const cleanText = text.replace(/\([^)]*\)/g, '').trim();
       if (!cleanText) return;
 
-      // 使用Capacitor原生TTS（如果可用）
+      // 1. 优先使用预录音频（真人级音质）
+      if (this.audioMap && this.audioMap[cleanText]) {
+        try {
+          const played = await this.playPreRecorded(cleanText);
+          if (played) return;
+        } catch (e) {
+          console.log('Pre-recorded audio failed, trying fallback...');
+        }
+      }
+
+      // 2. 使用Capacitor原生TTS（如果可用）
       if (this.useNativeTTS) {
         let capacitorTTSWorked = false;
         try {
@@ -4529,7 +4597,6 @@ const App = (function() {
               });
               capacitorTTSWorked = true;
             } catch (e) {
-              // Capacitor TTS 失败，继续尝试 eSpeak-ng
               console.log('Capacitor TTS failed, will try eSpeak-ng...');
             }
           }
@@ -4537,7 +4604,7 @@ const App = (function() {
           console.log('Capacitor TTS error, will try eSpeak-ng...');
         }
         
-        // Capacitor TTS 失败或未加载，使用 eSpeak-ng 离线 TTS（内置乌尔都语数据）
+        // Capacitor TTS 失败或未加载，使用 eSpeak-ng 离线 TTS
         if (!capacitorTTSWorked) {
           if (window.EspeakTTS) {
             try {
